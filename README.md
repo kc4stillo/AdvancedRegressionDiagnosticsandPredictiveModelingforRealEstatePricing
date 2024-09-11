@@ -19,11 +19,6 @@ This project focuses on advanced regression diagnostics and predictive modeling 
 2. Open the Quarto file in RStudio.
 3. Render the entire script to generate the analysis and diagnostics report in a browser.
 
-## Project Structure
-- `data/`: Contains the dataset used for modeling.
-- `code/`: R scripts for data cleaning, modeling, and diagnostics.
-- `output/`: Generated graphs, reports, and model performance metrics.
-
 ## Author
 **Kyle Castillo**
 
