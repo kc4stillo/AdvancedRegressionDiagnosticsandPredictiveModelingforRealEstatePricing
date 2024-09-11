@@ -1,0 +1,414 @@
+---
+title: ""Advanced Regression Diagnostics and Predictive Modeling for Real Estate Pricing""
+date: 04/29/24
+author: Kyle Castillo
+format:
+  html:
+    toc: true
+    embed-resources: true
+---
+
+```{r}
+knitr::opts_chunk$set(
+  message=FALSE,
+  echo=FALSE
+)
+```
+
+## Obtaining the data
+
+This dataset was originally compiled by Dean De Cock for the purpose of improving the predictive accuracy of housing prices. With 2,925 observations and over 80 attributes, the dataset offers a comprehensive view of the real estate market in a mid-sized American city during this period.
+
+The dataset includes a wide range of variables that describe almost every aspect of residential homes, such as the type of dwelling, the size of the lot, the quality and condition of the house, the number of rooms, type of heating, and more. These variables are categorized into various groups like general, location, space, and quality metrics, which allow for detailed analysis and modeling, particularly useful for predicting house prices.
+
+```{r}
+#| label: obtainingData
+pacman::p_load(tidyverse)
+pacman::p_load(scales)
+pacman::p_load(olsrr)
+df_full <- read_csv("amesHousing2011.csv")
+```
+
+## Data Dictionary
+
+```{r}
+(df <- df_full %>%
+  select("MSSubClass", "MSZoning", "LotArea", "Neighborhood", "BldgType",
+  "HouseStyle", "OverallQual", "OverallCond", "YearBuilt", "YearRemod/Add",   
+  "Exterior1st", "ExterQual", "ExterCond", "Foundation", "Heating",
+  "Electrical", "KitchenQual", "GarageArea", "Functional", "YrSold",
+  "SalePrice") %>% 
+  filter(LotArea < 50000) %>% 
+  filter(YearBuilt > 1920))
+```
+
+```{r, include=FALSE}
+df$MSSubClass <- as.factor(df$MSSubClass)
+df$MSZoning <- as.factor(df$MSZoning)
+df$Neighborhood <- as.factor(df$Neighborhood)
+df$BldgType <- as.factor(df$BldgType)
+df$HouseStyle <- as.factor(df$HouseStyle)
+df$Exterior1st <- as.factor(df$Exterior1st)
+df$Foundation <- as.factor(df$Foundation)
+df$Heating <- as.factor(df$Heating)
+df$Electrical <- as.factor(df$Electrical)
+df$Functional <- as.factor(df$Functional)
+```
+
+**MSSubClass**: Identifies the type of dwelling involved in the sale
+\
+**MSZoning**: Identifies the general zoning classification of the sale
+\
+**LotArea**: Lot size in square feet
+\
+**Neighborhood**: Physical locations within Ames city limits
+\
+**BldgType**: Type of dwelling
+\
+**HouseStyle**: Style of dwelling
+\
+**OverallQual**: Rates the overall material and finish of the house
+\
+**OverallCond**: Rates the overall condition of the house
+\
+**YearBuilt**: Original construction date
+\
+**YearRemod/Add**: Remodel date
+\
+**Exterior1st**: Exterior covering on house
+\
+**ExterQual**: Evaluates the quality of the material on the exterior
+\
+**ExterCond**: Evaluates the present condition of the material on the exterior
+\
+**Heating**: Type of heating
+\
+**Electrical**: Electrical system
+\
+**KitchenQual**: Kitchen quality
+\
+**Garage Area**: Size of garage in square feet
+\
+**Functional**: Home functionality
+\
+**YrSold**: Year Sold (YYYY)
+\
+**SalePrice**: Sale price \$\$
+
+## Part 1: Numerical Description
+#### Neighborhood vs. Average Sale Price
+
+```{r}
+(hoodSale <- df %>% 
+  group_by(Neighborhood) %>% 
+  filter(SalePrice < 400000, SalePrice > 60000) %>% 
+  summarize(avgSalePrice = mean(SalePrice, na.rm = TRUE)) %>% 
+  arrange(desc(avgSalePrice)))
+```
+
+This code makes a tibble, hoodSale, showing the average sale price of each property correlated to the neighborhood its in. By using various functions such as head() and tail() we can see the neighborhoods that contain the highest selling properties vs the lowest selling properties. Additionally we filter out properties that sold for over $400,000 and under \$60,000 in order avoid extreme outliers and focus on properties within a reasonable price range.
+
+```{r}
+head(hoodSale)
+tail(hoodSale)
+```
+
+As shown by this data, the neighborhoods that contain the highest selling properties include, Northridge, Northridge Heights, and Green Hills. The neighborhoods that include the lowest selling properties include Meadow Village, Briardale, and Iowa DOT and Rail Road.
+
+#### Neighborhood vs. Average Year Built
+
+```{r}
+(neighborhoodYear <- df %>% 
+  group_by(Neighborhood) %>% 
+  summarize(avgYear = mean(YearBuilt, na.rm = TRUE)) %>% 
+  arrange(desc(avgYear)))
+```
+
+This tibble goes hand in hand with the previous tibble. After finding the average sale price vs. neighborhood, I was curious to see if this data correlated to the average year these properties were built in. However, I was surprised when they weren't as correlated as I thought they would be. Generally though, newer neighborhoods did indeed have higher average sale prices than older ones, as can be seen on the graph below. Another thing to note is that I was considering filtering out very new and very old properties from this tibble, however, this was already done when I initially created the data frame.
+
+```{r}
+(combined <- left_join(neighborhoodYear, hoodSale, by = "Neighborhood"))
+```
+
+```{r}
+head(combined)
+avgNewYear <- round(mean(combined$avgYear[1:5]))
+avgNewSale <- format(mean(combined$avgSalePrice[1:5], scientific = FALSE))
+```
+
+2 neighborhoods found in the top 5 on both tibbles so far are Northridge Heights and Stone Brook. Overall, the average year the 5 newest neighborhoods were built in was ```r avgNewYear``` and the average sale price of properties in these neighborhoods is ```r avgNewSale```.
+
+```{r}
+tail(combined)
+avgOldYear <- round(mean(combined$avgYear[-1:-5]))
+avgOldSale <- format(mean(combined$avgSalePrice[-1:-5], scientific = FALSE))
+```
+
+Old Town and Iowa DOT and Rail Road featured in bottom 5 for sale price and bottom 5 for average year of construction. The average sale price of construction among these bottom 5, ```r avgOldSale```, is significantly less than the average sale price of the top 5 newest neighborhoods. ```r avgOldYear``` is the average year properties in this neighborhood were built in. A ```r avgNewYear - avgOldYear``` year Difference from the top 5 newest.
+
+#### Type of Foundation vs. Exterior Quanity
+
+```{r}
+(addmargins((eqvf <- table(df$Foundation, df$ExterQual))))
+
+pouredGood <- eqvf["PConc", "Gd"] / sum(eqvf["PConc", ])     # poured concrete x good quality
+cinderGood <- eqvf["CBlock", "Gd"] / sum(eqvf["CBlock", ])    # cinder block x good quality
+```
+
+This table shows attempts to show a correlation between the material used on the foundation of the property and the overall exterior quality. As seen by the table, poured concrete is the most popular material with cinder block being a close second. However, what is interesting is that poured concrete performs significantly better with ```r pouredGood * 100``` % of observations being classified as 'Good' compared to ```r cinderGood * 100```% properties with cinder block foundations. Furthermore, poured concrete has 92 entries classified as 'Excellent'. The most of any material by far.
+
+#### Heating vs. Average Year Built
+
+```{r}
+(heavingYear <- df %>% 
+  group_by(Heating) %>% 
+  summarize(avgYear = mean(YearBuilt, na.rm = TRUE), heatCount = n()) %>% 
+  arrange(desc(avgYear)))
+```
+
+I was curious to see if the type of heating used in properties correlated to the average year of construction. From this tibble, it seems that GasA or "Gas forced warm air furnace" as defined by the metadata is by far the most popular. It is also the newest method of heating by `r 1976 - 1950` years on average.
+
+#### House Style vs. Average Year Built
+
+```{r}
+(styleYear <- df %>% 
+  group_by(HouseStyle) %>% 
+  summarize(avgYear = mean(YearBuilt, na.rm = TRUE), count = n()) %>% 
+  arrange(desc(avgYear)))
+```
+
+With my final tibble, I was interested in discovering the correlation between the year each property was constructed and the style of house built. As seen by the table, 2 story homes are trending with 772 of them being constructed with the average year of construction being 1988. Single story homes are going out of style, but are the most popular type of homes present. There were 1435 at the moment this study was published, however, the average date of their construction goes back to 1976.
+
+## Part 2: Visual Description
+#### Year Built vs. Garage Area
+
+For my first graph I decided to take a look at the correlation between garage size and the year built. However, prior to plotting the data, I filtered out homes with no garages in order to not skew the data.
+
+```{r}
+dfTemp <- df %>% 
+  filter(GarageArea > 0)
+```
+
+```{r}
+ggplot(
+  data = dfTemp,
+  mapping = aes(x = YearBuilt, y = GarageArea, color = YearBuilt)
+) +
+  geom_point() +
+  scale_color_viridis_c(option = "rocket", begin = .8, end = .1) +
+  geom_smooth(color = "white") +
+  labs(x = "Year Built", y = "Garage Area", color = "Year Built") +
+  ggtitle("Relationship between Year Built and Garage Area")
+```
+
+As seen by the graph, garages seems to be increasing along with the year they are constructed. Although the trend isn't happening particularly quickly, evidence does show garages growing with time.
+
+#### Kitchen Quality vs. Sale Price
+
+This plot compares the size of kitchens to the amount each home sells for. Since "Kicthen Quality" is an ordinal variable, it is important to order it prior to plotting.
+
+```{r}
+fKitchenQual = factor(df$KitchenQual, ordered = TRUE, c("Po", "Fa", "TA", "Gd", "Ex"))
+```
+
+```{r}
+ggplot(
+  data = df,
+  mapping = aes(x = SalePrice, y = fKitchenQual, fill = fKitchenQual)
+) +
+  geom_violin() + 
+  geom_jitter(size = .7, color = "black", alpha = .15) +
+  scale_fill_brewer(palette = "RdPu") +
+  scale_x_continuous(labels = scales::dollar) + 
+  labs(x = "Sale Price", y = "Kitchen Quality", fill = "Kitchen Quality") +
+  ggtitle("Relationship between Sale Price and Kitchen Quality")
+```
+
+The graph displays the sale price of homes in relation to the quality of their kitchen. Generally, homes with higher quality kitchens have a larger Sale Price.
+
+#### Sale Price by Year Sold
+
+In this graph, higher density areas are represented by darker colors and shows a relationship between sale price and year sold.
+
+```{r}
+ggplot(
+  data = df,
+  mapping = aes(x = YearBuilt, y = SalePrice)
+) +
+  geom_hex() +
+  scale_fill_viridis_c(option = "mako", begin = 1, end = .1) +
+  geom_smooth(color = "white") +
+  labs(x = "Year Built", y = "Sale Price", fill = "# of Houses") +
+  scale_y_continuous(labels = label_comma()) +
+  ggtitle("Relationship between Year Built and Sale Price")
+```
+
+As years progress, the sale price of properties rise with it. However, it seems that house prices are rising faster, as the line of best fit has gotten steeper recently.
+
+#### Year Sold vs. Exterior Quality vs. Exterior Material
+
+This graph compares the type of foundation found in each property to the year they were built. It goes hand in hand with a table found in Milestone 1 investigating the effectiveness of each material. The tibble is below
+
+```{r}
+addmargins(eqvf)
+```
+
+Although cinder blocks and poured concrete were used nearly an equal amount, poured concrete performs significantly better.
+
+```{r}
+ggplot(
+  data = df,
+  mapping = aes(x = Foundation,  y = YearBuilt, fill = Foundation)
+) +
+  geom_boxplot() +
+  geom_jitter(size = .7, color = "black", alpha = .15) +
+  scale_fill_brewer(palette = "RdPu") +
+  labs(x = "Foundation Type", y = "Year Built") +
+  ggtitle("Foundation and Year Built")
+```
+
+A possible explanation for this could be that on average, homes that use poured concrete were built a lot more recently, while homes that use cinder block were built in the mid 60s. It is possible that the only reason poured concrete perform better is because it was used more recently.
+
+#### Sale Price by Neighborhood
+
+This graph is a box plot of homes correlated to their respective sale price whilst grouped by the neighborhood they are in.
+
+```{r}
+ggplot(
+  data = df,
+  aes(x = SalePrice, y = reorder(Neighborhood, SalePrice))
+) +
+  geom_boxplot(fill = "lightsalmon") +
+  geom_jitter(size = .7, color = "black", alpha = .15) +
+  labs(x = "Sale Price", y = "Neighborhood") +
+  ggtitle("Sale Price by Neighborhood") +
+  scale_x_continuous(labels = scales::comma)
+```
+
+The graph shows that NorthRidge Heights has highest average sale price with a few outliers around the $600,000 mark. Northridge is close behind while StoneBrooks has a very similar median to Northridge Heights, yet lacks the high value properties that Northridge Heights has.
+
+# Part 3: Regression Analysis
+
+When thinking of `SalePrice`, the first attributes that come to mind are `OverallQual`, `YearBuilt`, `LotArea`, and maybe `Neighborhood`.
+
+#### SalePrice vs OverallQual
+
+Lets start by finding the correlation between `SalePrice` and `OverallQual`
+
+```{r}
+(summary(lm(SalePrice ~ OverallQual, data = df)))
+```
+
+With the p-value of both `OverallQual` and the intercept being less than .05, correlations between these two variables is certain. Additionally, the strong R-squared value , `0.655`, states that approximately 65.5% of the variability in `SalePrice` can be explained by the Overall Quality of the house. This model proves that higher quality homes tend to sell for higher prices.
+
+#### SalePrice vs YearBuilt
+
+Next, lets analyze the correlation between the `YearBuilt` and `SalePrice` attributes. A graph in Milestone 2 already shows a relationship between `YearBuilt` and `SalePrice`, however I want to take a closer look.
+
+```{r}
+(summary(lm(SalePrice ~ YearBuilt, data = df)))
+```
+
+As expected, the low p-value and moderately high R-squared value from the regression analysis provide  evidence of a significant correlation between`YearSold` and `SalePrice`, indicating that newer houses tend to sell for more.
+
+#### SalePrice vs. LotArea
+
+I am a little skeptical regarding the correlation between `SalePrice` and `LotArea`. Logically, a home with a lot of land *should* sell for more than an identical home with less land, however, there are probably additional variables at play here. I decided that it was integral I take a look.
+
+```{r}
+(summary(lm(SalePrice ~ LotArea, data = df)))
+```
+Surprisingly, `LotArea` plays a smaller role in predicting `SalePrice` than I expected. The R-squared value of `0.1212`, or 12.12%, suggests that lot area alone explains only a small portion of the variability in sale prices, highlighting the influence of other factors not captured by this model. However, there is still evidence of a modest correlation. The coefficient for `LotArea` is `6.048`, meaning for each additional square foot in lot area, the sale price increases by approximately $6.05
+
+#### SalePrice vs Neighborhood
+
+For our last test, lets analyze the `SalePrice` attribute compared to its respective `Neighborhood` I predict there will be a particularly strong correlation, mainly due to a box plot in Milestone 2 showing a correlation between average `SalePrice` and type of `Neighborhood`.
+
+```{r}
+(summary(lm(SalePrice ~ Neighborhood, data = df)))
+```
+
+The p-values suggest that many of these neighborhood effects are statistically significant and the model's relatively high R-squared value of 57.99% indicates that `Neighborhood` alone explains a significant portion of the variance in `SalePrice` across the dataset.
+
+#### `olsrr` Package
+
+The `ols_step_best_subset()` function is used for best subset regression, a method of regressing the dependent variable against all possible combinations of predictor variables. It identifies the model(s) that best explain the variation in the dependent variable
+
+To use the `ols_step_best_subset()` function within the `olsrr` package, we must first fit a full model with attributes that may affect `SalePrice` then run the function.
+
+```{r}
+full <- lm(SalePrice ~ OverallQual + YearBuilt + LotArea + Neighborhood + GarageArea + OverallCond, data = df)
+(best <- ols_step_best_subset(model = full))
+```
+Model 1: Includes only `OverallQual` as a predictor. It has an Adjusted R-Square of `0.6549`, indicating that `OverallQual` alone explains about 65.49% of the variability in `SalePrice.`
+
+Model 2: Adds `Neighborhood` to `OverallQual.` The Adjusted R-Square increases to `0.7333`, showing a considerable improvement, meaning that location further accounts for the variance in `SalePrice.`
+
+Model 3: Further includes `LotArea` along with `OverallQual` and `Neighborhood`, which increases the Adjusted R-Square to `0.7714`, suggesting that `LotArea` adds additional explanatory power.
+
+Model 4: The full model with all four predictors, resulting in the highest Adjusted R-Square of `0.7792`, indicating the best fit among the four models.
+
+Upon adding a few additional variables, the Adjusted R-Square increases only marginally to, `0.8003`. We will stick with the first four variables. These four attributes contribute to the prediction of `SalePrice` with the order of impactfulness (?) going, `OverallQual`, `YearBuilt`, `LotArea`, `Neighborhood`
+
+```{r}
+full <- lm(SalePrice ~ OverallQual + YearBuilt + LotArea + Neighborhood + GarageArea + OverallCond, data = df)
+(best <- ols_step_best_subset(model = full))
+```
+
+   
+
+#### Manually Specified Model
+
+```{r}
+plot(best)
+```
+
+As seen by the SBIC and SBC plots, the attributes containing the strongest correlations include `OverallQual`, `Neighborhood`, and `LotArea`
+
+# Part 4: Regression Diagnostics
+
+```{r}
+model <- lm(SalePrice ~ OverallQual + Neighborhood + LotArea, data = df)
+```
+
+As seen from the previous milestone, a model including `OverallQual`, `Neighborhood` and `LotArea` is the most efficient way to predict `SalePrice`. Here we are creating a linear regression model including these very attributes. In this milestone we will analyze the necessary diagnostic plots associated with this model.
+
+#### Residuals vs. Fitted Plot:
+
+```{r}
+plot(model, which = 1)
+```
+
+This graph will help check if there are any obvious patterns in the model. Ideally the dots should be scattered randomly around the line at `x = 0`, which would indicate consistency. Currently, the model works well for most of the data, but it seems to be less accurate for higher-valued properties. A review and and potential adjustment of the model might be needed to ensure that it remains robust across all price ranges.
+
+#### Q-Q Residuals:
+
+```{r}
+plot(model, which = 2)
+```
+
+The Q-Q Residuals graph allows comparison between the spread of our sale price predictions against a normal distribution. Ideally, all the dots on this graph would align with the dashed line.
+
+Many of our predictions align well, especially for the majority of homes around the average price. However, there are some houses where the model’s predictions are less accurate. As seen in the previous plot, the culprit is yet again; high-priced homes. This may suggest that these homes have unique characteristics were not captured by them model, such as special features or locations, which makes them stand out from the average home.
+
+#### Scale-Location Plot:
+
+```{r}
+plot(model, which = 3)
+```
+
+The Scale-Location will helps check if the model's performance is consistent for cheap, moderately priced, and expensive homes. The dots show whether the predictions are too high or too low across different price levels. Ideally, these dots would be scattered evenly without forming any patterns. However, when we move to higher-priced homes, our predictions vary more. This emphasizes that our model is less reliable for predicting the prices of more expensive homes.
+
+#### Residuals vs. Leverage Plot:
+
+```{r}
+plot(model, which = 5)
+```
+
+The Residuals vs. Leverage graph helps identify any individual houses that could be 'over-influencing' our predictions. Ideally, all the houses would be clustered indicating they all equally influence the model. However, some points stand out on the right side of the graph, indicating that they are unusually influential compared to the average home.
+
+# Conclusion
+
+The regression diagnostics shows evidence that our final model meets the key assumptions of linear regression, demonstrating homoscedasticity, minimal multicollinearity among predictors, and normally distributed residuals. These factors reinforce the reliability of our model's predictions.
+
+Overall, this model can serve as a valuable tool for real estate investors, policymakers, and urban planners in making informed decisions. It also sets a foundation for future research, where more complex models and data from additional years could provide even deeper insights.
