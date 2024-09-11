@@ -1,7 +1,7 @@
 # Advanced Regression Diagnostics and Predictive Modeling for Real Estate Pricing
 
 ## Project Overview
-This project, created by **Kyle Castillo** for the course **i306 Statistics for Informatics**, focuses on advanced regression diagnostics and predictive modeling to analyze and predict real estate prices. The analysis utilizes key factors such as property size, location, and quality to develop a robust regression model. Comprehensive diagnostics are conducted to assess the performance and accuracy of the model.
+This project focuses on advanced regression diagnostics and predictive modeling to analyze and predict real estate prices. The analysis utilizes key factors such as property size, location, and quality to develop a robust regression model. Comprehensive diagnostics are conducted to assess the performance and accuracy of the model.
 
 ## Key Features
 - **Predictive Model Development**: A regression model designed to predict housing prices based on multiple independent variables (such as location, square footage, and build quality).
@@ -16,8 +16,8 @@ This project, created by **Kyle Castillo** for the course **i306 Statistics for 
 
 ## How to Run
 1. Clone the repository.
-2. Open the R Markdown file in RStudio.
-3. Run the entire script to generate the analysis and diagnostics report.
+2. Open the Quarto file in RStudio.
+3. Render the entire script to generate the analysis and diagnostics report in a browser.
 
 ## Project Structure
 - `data/`: Contains the dataset used for modeling.
